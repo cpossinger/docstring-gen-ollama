@@ -1,9 +1,0 @@
-project:
-  output-dir: _docs
-
-website:
-  title: "docstring-gen"
-  site-url: "https://airtai.github.io/docstring-gen"
-  description: "Generate docstrings using OpenAI's Codex model."
-  repo-branch: main
-  repo-url: "https://github.com/airtai/docstring-gen"
