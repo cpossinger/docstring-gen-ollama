@@ -5,13 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "docstring-gen-ollama"
 dynamic = ["version"]
-description = ''
+description = 'generate docstrings using ollama'
 readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
 keywords = []
 authors = [
-  { name = "164182", email = "camden.possinger@delta.com" },
+  { name = "Camden Possinger", email = "cposs2000@gmail.com" },
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -24,7 +24,7 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
-dependencies = []
+dependencies = ["ollama"]
 
 [project.urls]
 Documentation = "https://github.com/164182/docstring-gen-ollama#readme"
