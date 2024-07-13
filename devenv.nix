@@ -9,6 +9,10 @@
     venv.enable = true;
     venv.requirements = ''
       hatch
+      ollama
+      nbformat
+      typer
+      mypy_extensions
     '';
   };
 }
