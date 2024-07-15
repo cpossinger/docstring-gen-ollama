@@ -1,290 +1,79 @@
-import ast
+import multiprocessing
+import os
 import re
-import textwrap
-from pathlib import Path
-from typing import Any, Callable, List, Tuple, Union
+from ast import (
+    AsyncFunctionDef,
+    ClassDef,
+    FunctionDef,
+    NodeTransformer,
+    get_docstring,
+    parse,
+    unparse,
+)
 
-import nbformat
-import ollama
-import typer
-from mypy_extensions import NamedArg
+from ollama import generate
 
-
-def _visit_functions(
-    tree: ast.AST,
-    *,
-    source: str,
-    start_lineno: int = 1,
-    end_lineno: int = -1,
-    callback: Callable[
-        [ast.AST, str, int, int, NamedArg(List[Tuple[int, int, int, int]], "retval")],
-        Any,
-    ],
-    **kwargs: Any,
-) -> None:
-    if end_lineno == -1:
-        end_lineno = len(source.split("\n"))
-
-    if isinstance(tree, (ast.AsyncFunctionDef, ast.FunctionDef, ast.ClassDef)):
-        if ast.get_docstring(tree) is None:
-            callback(tree, source, start_lineno, end_lineno, **kwargs)
-
-    if hasattr(tree, "body"):
-        for i, n in enumerate(tree.body):
-            node_start_lineno = tree.body[i].lineno
-            node_end_lineno = (
-                tree.body[i + 1].lineno - 1 if i < (len(tree.body) - 1) else end_lineno
-            )
-            _visit_functions(
-                n,
-                source=source,
-                start_lineno=node_start_lineno,
-                end_lineno=node_end_lineno,
-                callback=callback,
-                **kwargs,
-            )
+PROMPT = "rewrite this python code inside ``` with a google styled docstring if it's a function write the docstring just for that function if it's a class write docstrings for the class methods too do not change the original code just add a docstring: \n"
 
 
-def _get_classes_and_functions(source: str) -> List[Tuple[int, int, int, int]]:
-    retval: List[Tuple[int, int, int, int]] = []
-    tree = ast.parse(source)
+class DocstringGenerator(NodeTransformer):
 
-    def callback(tree, source, start_lineno, end_lineno, *, retval):
-        retval.append(
-            (start_lineno, tree.body[0].lineno - 1, end_lineno, tree.body[0].col_offset)
+    def extract_code(self, text: str) -> str | None:
+        pattern = r"```(.*?)```"
+        matches = re.findall(pattern, text, re.DOTALL)
+        return matches[0] if matches else None
+
+    def add_docstring(self, node):
+        prompt = PROMPT + unparse(node)
+        response = generate(model="llama3", prompt=prompt)
+        code_with_docstring = self.extract_code(response["response"])
+        print(f"CODE BEFORE DOCSTRING: {unparse(node)}")
+        print(f"CODE AFTER DOCSTRING: {code_with_docstring}")
+        new_tree = parse(code_with_docstring)
+
+        new_node = FunctionDef(
+            name=node.name,
+            args=node.args,
+            body=new_tree.body[0].body,
+            decorator_list=node.decorator_list,
+            returns=node.returns,
         )
 
-    _visit_functions(
-        tree,
-        source=source,
-        callback=callback,
-        retval=retval,
-    )
+        return new_node
 
-    return retval
-
-
-def _get_code_from_source(source: str, start_line_no: int, end_line_no: int) -> str:
-    source_lines = source.split("\n")
-    extracted_lines = source_lines[start_line_no - 1 : end_line_no]
-    return "\n".join(extracted_lines)
+    def visit(self, node):
+        match node:
+            case FunctionDef() | AsyncFunctionDef() if not get_docstring(node):
+                return self.generic_visit(self.add_docstring(node))
+            case ClassDef() if not get_docstring(node):
+                return self.add_docstring(node)
+            case _:
+                return self.generic_visit(node)
 
 
-def _completions(*args, **kwargs):
-    return ollama.generate(*args, **kwargs)
+def handle_python_file(file_path):
+    with open(file_path) as file:
+        tree = parse(file.read())
+    new_tree = DocstringGenerator().visit(tree)
+    with open(file_path, "w") as file:
+        file.write(unparse(new_tree))
 
 
-DOCSTRING_ERR = """!!! note
-    
-    Failed to generate docs
-"""
-PROMPT = """
-Write only a google styled docstring for this python code as a multiline string: \n
-"""
-
-
-def _generate_docstring_using_ollama(
-    code: str,
-    **kwargs: Union[int, float, str, List[str]],
-) -> str:
-    prompt = PROMPT + code
-    response = _completions(prompt=prompt, **kwargs)
-    retval = response["response"]
-    return retval
-
-
-def _fix_docstring_indent(
-    docstring: str,
-    col_offset: int,
-) -> str:
-    start = docstring.find('"""')
-    end = docstring.rfind('"""') + 3
-
-    docstring = docstring[start:end]
-
-    typer.echo(docstring)
-
-    lines = docstring.split("\n")
-    rest = textwrap.dedent("\n".join(lines[1:]))
-    retval = lines[0] + "\n" + rest
-
-    # retval = '"""' + retval + '"""'
-    retval = textwrap.indent(retval, prefix=" " * col_offset)
-    return retval
-
-
-def _inject_docstring_to_source(
-    source: str,
-    indented_docstrings: List[str],
-    linenos: List[Tuple[int, int, int, int]],
-) -> str:
-    source_lines = source.split("\n")
-    line_offset = 0
-    for docstring, (_, docstring_line_no, _, _) in zip(indented_docstrings, linenos):
-        docstring_lines = docstring.split("\n")
-        source_lines = (
-            source_lines[: docstring_line_no + line_offset]
-            + docstring_lines
-            + source_lines[docstring_line_no + line_offset :]
-        )
-        line_offset += len(docstring_lines)
-
-    return "\n".join(source_lines)
-
-
-AUTO_GEN_BODY = "The above docstring is autogenerated by docstring-gen library"
-
-
-def _remove_auto_generated_docstring(source: str) -> str:
-    placeholder = "{DOCSTRING_PLACEHOLDER}"
-    retval = re.sub(
-        f'"""((?!""").)*?({AUTO_GEN_BODY}).*?"""', placeholder, source, flags=re.DOTALL
-    )
-    retval = "\n".join([l for l in retval.split("\n") if l.strip() != placeholder])
-    return retval
-
-
-def _check_and_add_docstrings_to_source(
-    source: str,
-    recreate_auto_gen_docs: bool,
-    **kwargs: Union[int, float, str, List[str]],
-) -> str:
-    if recreate_auto_gen_docs:
-        source = _remove_auto_generated_docstring(source)
-
-    linenos = _get_classes_and_functions(source)
-    if len(linenos) != 0:
-        classes_and_functions = [
-            _get_code_from_source(source, start_line_no, end_line_no)
-            for start_line_no, docstring_line_no, end_line_no, node_offset in linenos
-        ]
-
-        docstrings = [
-            _generate_docstring_using_ollama(i, **kwargs) for i in classes_and_functions
-        ]
-        offsets = [node_offset for i, _, _, node_offset in linenos]
-
-        indented_docstrings = [
-            _fix_docstring_indent(docstring, offset)
-            for docstring, offset in zip(docstrings, offsets)
-        ]
-        source = _inject_docstring_to_source(source, indented_docstrings, linenos)
-
-    return source
-
-
-def _get_files(p: Path) -> List[Path]:
-    exts = [".ipynb", ".py"]
-    files = [
-        f
-        for f in p.rglob("*")
-        if f.suffix in exts
-        and not any(p.startswith(".") for p in f.parts)
-        and not f.name.startswith("_")
-    ]
-
-    if len(files) == 0:
-        raise ValueError(
-            f"The directory {p.resolve()} does not contain any Python files or notebooks"
-        )
-
-    return files
-
-
-def _add_docstring_to_nb(
-    file: Path,
-    recreate_auto_gen_docs: bool,
-    version: int = 4,
-    **kwargs: Union[int, float, str, List[str]],
-) -> None:
-    file_modified = False
-    _f = nbformat.read(file, as_version=version)
-
-    for cell in _f.cells:
-        if cell.cell_type == "code":
-            original_src = cell["source"]
-            try:
-                updated_src = _check_and_add_docstrings_to_source(
-                    original_src, recreate_auto_gen_docs, **kwargs
-                )
-                if not file_modified:
-                    file_modified = original_src != updated_src
-                cell["source"] = updated_src
-            except SyntaxError as e:
-                typer.secho(
-                    f"WARNING: Unable to parse the below cell contents in {file} due to: {e}. Skipping the cell for docstring generation.",
-                    fg=typer.colors.YELLOW,
-                )
-                typer.echo(original_src)
-                cell["source"] = original_src
-
-    nbformat.write(_f, file)
-
-    if file_modified or recreate_auto_gen_docs:
-        typer.secho(f"Successfully added docstrings to {file}", fg=typer.colors.CYAN)
-
-
-def _add_docstring_to_py(
-    file: Path,
-    recreate_auto_gen_docs: bool,
-    **kwargs: Union[int, float, str, List[str]],
-) -> None:
-    try:
-        file_modified = False
-        with file.open("r") as f:
-            source = f.read()
-        original_src = source
-        updated_src = _check_and_add_docstrings_to_source(
-            source, recreate_auto_gen_docs, **kwargs
-        )
-
-        with file.open("w") as f:
-            f.write(updated_src)
-
-        if not file_modified:
-            file_modified = original_src != updated_src
-
-        if file_modified or recreate_auto_gen_docs:
-            typer.secho(
-                f"Successfully added docstrings to {file}", fg=typer.colors.CYAN
-            )
-
-    except SyntaxError as e:
-        typer.secho(
-            f"WARNING: Unable to parse the {file} due to: {e}. Skipping the file for docstring generation.",
-            fg=typer.colors.YELLOW,
-        )
-
-
-def add_docstring_to_source(
-    path: str = typer.Argument(..., help="The path to the source file or directory."),
-    recreate_auto_gen_docs: bool = typer.Option(
-        False, help="Whether to recreate auto generated docs."
-    ),
-    model: str = typer.Option(
-        "llama3", help="The model to use for docstring generation."
-    ),
-) -> None:
-    path = Path(path)
-    files = _get_files(path) if path.is_dir() else [path]
-
-    for file in files:
-        if file.suffix == ".ipynb":
-            _add_docstring_to_nb(
-                file=file,
-                recreate_auto_gen_docs=recreate_auto_gen_docs,
-                model=model,
-            )
-        else:
-            _add_docstring_to_py(
-                file=file,
-                recreate_auto_gen_docs=recreate_auto_gen_docs,
-                model=model,
-            )
+def create_and_start_process(file_path):
+    process = multiprocessing.Process(target=handle_python_file, args=(file_path,))
+    process.start()
+    return process
 
 
 def main():
-    typer.run(add_docstring_to_source)
+    processes = [
+        create_and_start_process(os.path.join(root, file))
+        for root, _, files in os.walk(".", topdown=True)
+        for file in files
+        if file.endswith(".py") and not file.startswith("__")
+    ]
+
+    [process.join() for process in processes]
 
 
 if __name__ == "__main__":
