@@ -30,9 +30,9 @@ dependencies = ["ollama", "tqdm" ]
 docstring-gen-ollama = "docstring_gen_ollama:main"
 
 [project.urls]
-Documentation = "https://github.com/164182/docstring-gen-ollama#readme"
-Issues = "https://github.com/164182/docstring-gen-ollama/issues"
-Source = "https://github.com/164182/docstring-gen-ollama"
+Documentation = "https://github.com/cpossinger/docstring-gen-ollama#readme"
+Issues = "https://github.com/cpossinger/docstring-gen-ollama/issues"
+Source = "https://github.com/cpossinger/docstring-gen-ollama"
 
 [tool.hatch.version]
 path = "src/docstring_gen_ollama/__about__.py"
