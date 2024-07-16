@@ -27,7 +27,7 @@ classifiers = [
 dependencies = ["ollama", "tqdm" ]
 
 [project.scripts]
-docstring-gen-ollama = "src.docstring_gen_ollama.docstring_generator:main"
+docstring-gen-ollama = "docstring_gen_ollama:main"
 
 [project.urls]
 Documentation = "https://github.com/164182/docstring-gen-ollama#readme"

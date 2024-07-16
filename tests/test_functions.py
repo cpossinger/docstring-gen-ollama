@@ -59,11 +59,10 @@ class BankAccount:
           ValueError: If the amount is greater than the available balance, it raises a ValueError with a message indicating 'Insufficient funds'.
         """
         if amount > self.balance:
-            print("Insufficient funds")
+            print('Insufficient funds')
             return
         self.balance -= amount
         return self.balance
-
 
 def create_account(name, initial_deposit):
     """
@@ -78,7 +77,6 @@ def create_account(name, initial_deposit):
     """
     account = BankAccount(name, initial_deposit)
     return account
-
 
 def transfer_funds(source_account, target_account, amount):
     """
@@ -97,13 +95,10 @@ def transfer_funds(source_account, target_account, amount):
     """
     if source_account.withdraw(amount) is not None:
         target_account.deposit(amount)
-
-
-alice_account = create_account("Alice", 1000)
-bob_account = create_account("Bob", 500)
+alice_account = create_account('Alice', 1000)
+bob_account = create_account('Bob', 500)
 print(f"Alice's initial balance: {alice_account.balance}")
 print(f"Bob's initial balance: {bob_account.balance}")
 transfer_funds(alice_account, bob_account, 200)
 print(f"Alice's balance after transfer: {alice_account.balance}")
 print(f"Bob's balance after transfer: {bob_account.balance}")
-
