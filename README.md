@@ -14,6 +14,9 @@
 
 ```console
 pip install docstring-gen-ollama
+ollama serve
+ollama pull llama3
+docstring-gen-ollama
 ```
 
 ## License
