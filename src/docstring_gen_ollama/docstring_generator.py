@@ -181,6 +181,12 @@ def main() -> None:
         description="Generate docstrings for Python files."
     )
     parser.add_argument(
+        "--path",
+        type=str,
+        default=".",
+        help="The path to use for generating docstrings.",
+    )
+    parser.add_argument(
         "--model",
         type=str,
         default="llama3",
@@ -196,7 +202,7 @@ def main() -> None:
     with multiprocessing.Pool() as pool:
         python_files = [
             os.path.join(root, file)
-            for root, _, files in os.walk(".", topdown=True)
+            for root, _, files in os.walk(args.path, topdown=True)
             for file in files
             if file.endswith(".py") and (not file.startswith("__"))
         ]
