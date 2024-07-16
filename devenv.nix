@@ -10,9 +10,6 @@
     venv.requirements = ''
       hatch
       ollama
-      nbformat
-      typer
-      mypy_extensions
       tqdm
     '';
   };
