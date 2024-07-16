@@ -24,7 +24,7 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
-dependencies = ["ollama", "nbformat", "typer", "mypy_extensions" ]
+dependencies = ["ollama", "tqdm" ]
 
 [project.scripts]
 docstring-gen-ollama = "src.docstring_gen_ollama.docstring_generator:main"
