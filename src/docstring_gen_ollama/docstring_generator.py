@@ -80,15 +80,14 @@ class DocstringGenerator(NodeTransformer):
 
     def extract_docstring(self, text: str) -> str:
         """
-        Extracts the docstring from the given text.
+        Extracts a Google-style docstring from the given text.
 
         Args:
-            self: The instance of the class.
-            text: The input text to extract the docstring from.
+            self: Not used in this function.
+            text (str): The input text containing the docstring.
 
         Returns:
-            A string representing the extracted docstring. If no docstring is found, returns None.
-
+            str: The extracted docstring. If no docstring is found, an empty string is returned.
         """
         pattern = '"""(.*?)"""'
         matches = re.findall(pattern, text, re.DOTALL)
