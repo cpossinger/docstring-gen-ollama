@@ -13,6 +13,7 @@
       nbformat
       typer
       mypy_extensions
+      tqdm
     '';
   };
 }
